@@ -1,0 +1,11 @@
+"""
+{
+  "test_mode": 1,  // 0 for live, 1 for test
+  "live_reseller_username": "your_live_username",
+  "live_api_key": "your_live_api_key",
+  "live_api_host_port": "https://rr-n1-tor.opensrs.net:55443",
+  "test_reseller_username": "your_test_username",
+  "test_api_key": "your_test_api_key",
+  "test_api_host_port": "https://horizon.opensrs.net:55443"
+}
+"""
