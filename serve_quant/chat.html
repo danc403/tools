@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>OpenAI Compatible Endpoint Chat</title>
+<style>
+  #chat-area {
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin-top: 10px;
+    overflow-y: auto; /* Add scrollbar if content overflows */
+    max-height: 400px; /* Set a maximum height */
+  }
+  .response-separator {
+    border-top: 1px dashed #ccc;
+    margin-top: 5px;
+    padding-top: 5px;
+  }
+  .prompt-display {
+    font-style: italic;
+    color: #777;
+    margin-top: 5px;
+  }
+</style>
+</head>
+<body>
+
+<h1>OpenAI Compatible Endpoint Browser</h1>
+
+<label for="provider">Provider:</label>
+<select id="provider">
+  <option value="https://api.openai.com/v1">OpenAI</option>
+  <option value="http://localhost">Localhost</option>
+  <option value="other">Other</option>
+</select>
+
+<div id="other-options" style="display: none;">
+  <label for="custom-url">URL/IP:</label>
+  <input type="text" id="custom-url" value="http://localhost"><br>
+  <label for="custom-port">Port:</label>
+  <input type="number" id="custom-port" value="80">
+</div><br>
+
+<label for="api-key">API Key (Optional):</label>
+<input type="password" id="api-key"><br><br>
+
+<button id="test-connection">Test Connection</button><br><br>
+
+<label for="prompt">Prompt:</label><br>
+<textarea id="prompt" rows="4" cols="50"></textarea><br>
+<button id="submit-prompt">Submit</button>
+<button id="clear-chat">Clear Chat</button><br><br>
+
+<div id="chat-area" aria-live="polite"></div>
+<div id="status-area" aria-live="polite"></div>
+
+<script>
+  const providerSelect = document.getElementById('provider');
+  const otherOptions = document.getElementById('other-options');
+  const customUrlInput = document.getElementById('custom-url');
+  const customPortInput = document.getElementById('custom-port');
+  const apiKeyInput = document.getElementById('api-key');
+  const testConnectionButton = document.getElementById('test-connection');
+  const promptInput = document.getElementById('prompt');
+  const submitPromptButton = document.getElementById('submit-prompt');
+  const clearChatButton = document.getElementById('clear-chat');
+  const chatArea = document.getElementById('chat-area');
+  const statusArea = document.getElementById('status-area');
+
+  providerSelect.addEventListener('change', () => {
+    if (providerSelect.value === 'other') {
+      otherOptions.style.display = 'block';
+    } else {
+      otherOptions.style.display = 'none';
+    }
+  });
+
+  testConnectionButton.addEventListener('click', async () => {
+    const baseUrl = getBaseUrl();
+    const apiKey = apiKeyInput.value;
+    statusArea.textContent = "Testing connection...";
+    try {
+      const response = await fetch(`${baseUrl}/v1/models`, { // Or a simple endpoint
+        headers: {
+          'Authorization': apiKey ? `Bearer ${apiKey}` : undefined
+        }
+      });
+      if (response.ok) {
+        statusArea.textContent = "Connection successful!";
+      } else {
+        statusArea.textContent = `Connection failed: ${response.status} ${response.statusText}`;
+      }
+    } catch (error) {
+      statusArea.textContent = `Connection failed: ${error.message}`;
+    }
+  });
+
+  submitPromptButton.addEventListener('click', async () => {
+    const prompt = promptInput.value;
+    const baseUrl = getBaseUrl();
+    const apiKey = apiKeyInput.value;
+
+    if (!prompt.trim()) return; // Don't send empty prompts
+
+    statusArea.textContent = "Sending prompt...";
+    try {
+      const response = await fetch(`${baseUrl}/v1/completions`, { // Replace with your endpoint
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': apiKey ? `Bearer ${apiKey}` : undefined
+        },
+        body: JSON.stringify({
+          model: "text-davinci-003", // Replace with your model
+          prompt: prompt,
+          max_tokens: 150 // Adjust as needed
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      statusArea.textContent = "Agent replied.";
+      displayResponse(data.choices[0].text, prompt); // Adjust data access as needed
+
+    } catch (error) {
+      statusArea.textContent = `Error: ${error.message}`;
+      displayResponse("Error: " + error.message, prompt); // Display error in chat
+    }
+  });
+
+  clearChatButton.addEventListener('click', () => {
+    chatArea.innerHTML = '';
+  });
+
+  function getBaseUrl() {
+    const provider = providerSelect.value;
+    if (provider === 'other') {
+      const url = customUrlInput.value;
+      const port = customPortInput.value;
+      return `${url}:${port}`;
+    } else {
+      return provider;
+    }
+  }
+
+  function displayResponse(responseText, prompt) {
+    const separator = document.createElement('div');
+    separator.className = 'response-separator';
+    chatArea.insertBefore(separator, chatArea.firstChild); // Insert separator at the top
+
+    const responseDiv = document.createElement('div');
+    responseDiv.textContent = responseText.trim();
+    chatArea.insertBefore(responseDiv, chatArea.firstChild);
+
+    if (prompt) { // Optionally display the prompt
+        const promptDiv = document.createElement('div');
+        promptDiv.className = 'prompt-display';
+        promptDiv.textContent = "Prompt: " + prompt.trim();
+        chatArea.insertBefore(promptDiv, chatArea.firstChild);
+    }
+  }
+</script>
+
+</body>
+</html>
