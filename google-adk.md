@@ -1,5 +1,6 @@
 ADK Agent Development: Local Models, RAG, Web, and Voice with Nextcloud
 This document provides a comprehensive guide to setting up the Google Agent Development Kit (ADK) to work with local Large Language Models (LLMs), implement Retrieval Augmented Generation (RAG) and Web Access capabilities, and integrate Speech-to-Text (STT) and Text-to-Speech (TTS) for a complete conversational AI experience. This version also includes instructions for connecting to a local Nextcloud instance for document retrieval.
+More info at: https://google.github.io/adk-docs/
 Table of Contents
 1. ADK and Dependencies Installation
 2. Integrating Your Custom Local LLM
