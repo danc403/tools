@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Reader</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+h1 {
+    color: #0056b3;
+}
+
+.controls {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #e0e0e0;
+    border-radius: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.controls label, .controls select, .controls button, .controls input[type="file"], .controls input[type="number"] {
+    margin-right: 10px;
+}
+
+button, select, input[type="number"] {
+    padding: 8px 15px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    cursor: pointer;
+    background-color: #fff;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #ddd;
+}
+
+#playPauseBtn {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+#playPauseBtn:hover {
+    background-color: #0056b3;
+}
+
+.reader-container {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    max-height: 600px;
+    overflow-y: auto;
+    font-size: 1.1em;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.reader-container p {
+    margin: 0;
+    padding: 2px 0;
+    cursor: pointer;
+}
+
+.reader-container p:hover {
+    background-color: #e6f7ff;
+}
+
+.current-line {
+    background-color: #d1ecf1;
+    font-weight: bold;
+    border-left: 5px solid #007bff;
+    padding-left: 5px;
+}
+
+.placeholder-text {
+    color: #888;
+    text-align: center;
+    font-style: italic;
+    padding: 50px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
+</style>
+</head>
+<body>
+    <h1>Simple Text Reader</h1>
+
+    <div class="controls">
+        <label for="fileInput">Choose a file:</label>
+        <input type="file" id="fileInput"> <label for="jsonlContentSelect" id="jsonlSelectLabel" style="display: none;">Select an entry:</label>
+        <select id="jsonlContentSelect" style="display: none;">
+            <option value="">-- Please select an entry --</option>
+        </select>
+
+        <label for="speedSelect">Reading Speed:</label>
+        <select id="speedSelect">
+            <option value="0.75">Slow</option>
+            <option value="1.0" selected>Normal</option>
+            <option value="1.25">Fast</option>
+            <option value="1.5">Faster</option>
+            <option value="2.0">Very Fast</option>
+        </select>
+
+        <button id="playPauseBtn">Play</button>
+        <button id="prevLineBtn">Previous Line</button>
+        <button id="nextLineBtn">Next Line</button>
+        <button id="bookmarkBtn">Bookmark Current Line</button>
+        <select id="bookmarksSelect" style="display:none;">
+            <option value="">Jump to Bookmark</option>
+        </select>
+
+        <label for="lineJumpInput">Go to Line:</label>
+        <input type="number" id="lineJumpInput" list="lineNumbersList" min="1" placeholder="Enter line #">
+        <datalist id="lineNumbersList"></datalist>
+    </div>
+
+    <div class="reader-container">
+        <div id="textDisplay" role="document" aria-labelledby="readerTitle">
+            <h2 id="readerTitle" class="sr-only">Document Content</h2>
+            <p class="placeholder-text">Load any file to start reading (optimized for .txt and .jsonl).</p>
+        </div>
+    </div>
+
+    <div id="liveRegion" aria-live="polite" aria-atomic="true" class="sr-only">
+        </div>
+
+    <script>
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById('fileInput');
+    const textDisplay = document.getElementById('textDisplay');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const prevLineBtn = document.getElementById('prevLineBtn');
+    const nextLineBtn = document.getElementById('nextLineBtn');
+    const speedSelect = document.getElementById('speedSelect');
+    const bookmarkBtn = document.getElementById('bookmarkBtn');
+    const bookmarksSelect = document.getElementById('bookmarksSelect');
+    const liveRegion = document.getElementById('liveRegion');
+    const lineJumpInput = document.getElementById('lineJumpInput');
+    const lineNumbersList = document.getElementById('lineNumbersList');
+
+    const jsonlContentSelect = document.getElementById('jsonlContentSelect');
+    const jsonlSelectLabel = document.getElementById('jsonlSelectLabel');
+
+    let lines = [];
+    let jsonlEntries = [];
+    let currentLineIndex = 0;
+    let playingInterval = null;
+    let isPlaying = false;
+    let currentFileName = '';
+
+    // --- Core Reading Functionality (managing live region and highlighting) ---
+
+    function announceLineInLiveRegion(lineText) {
+        liveRegion.textContent = lineText;
+    }
+
+    function highlightCurrentLine() {
+        const prevHighlighted = textDisplay.querySelector('.current-line');
+        if (prevHighlighted) {
+            prevHighlighted.classList.remove('current-line');
+        }
+
+        const currentLineElement = textDisplay.children[currentLineIndex];
+        if (currentLineElement) {
+            currentLineElement.classList.add('current-line');
+            currentLineElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    function readNextLine() {
+        if (currentLineIndex < lines.length) {
+            highlightCurrentLine();
+            announceLineInLiveRegion(lines[currentLineIndex]);
+            currentLineIndex++;
+        } else {
+            stopReading();
+            announceLineInLiveRegion("End of file reached.");
+        }
+    }
+
+    function startReading() {
+        if (lines.length === 0) return;
+
+        isPlaying = true;
+        playPauseBtn.textContent = 'Pause';
+
+        if (currentLineIndex >= lines.length) {
+            currentLineIndex = 0;
+        }
+        readNextLine();
+
+        const baseDelayMs = 1500;
+        const selectedSpeed = parseFloat(speedSelect.value);
+        const intervalDelay = baseDelayMs / selectedSpeed;
+
+        playingInterval = setInterval(readNextLine, intervalDelay);
+    }
+
+    function stopReading() {
+        isPlaying = false;
+        playPauseBtn.textContent = 'Play';
+        if (playingInterval) {
+            clearInterval(playingInterval);
+            playingInterval = null;
+        }
+    }
+
+    // --- Helper to load any text content into the reader display ---
+    function loadTextIntoReader(textString, sourceFileName) {
+        lines = textString.split('\n');
+        currentFileName = sourceFileName;
+
+        textDisplay.innerHTML = '';
+        if (lines.length === 0 || (lines.length === 1 && lines[0].trim() === '')) {
+             const p = document.createElement('p');
+             p.textContent = "Content is empty.";
+             p.classList.add('placeholder-text');
+             textDisplay.appendChild(p);
+             lines = [];
+        } else {
+            lines.forEach((line, index) => {
+                const p = document.createElement('p');
+                p.textContent = line.trim() === '' ? '\u00A0' : line;
+                p.dataset.lineIndex = index;
+                p.addEventListener('click', () => {
+                    stopReading();
+                    currentLineIndex = index;
+                    highlightCurrentLine();
+                    announceLineInLiveRegion(lines[currentLineIndex]);
+                });
+                textDisplay.appendChild(p);
+            });
+        }
+
+        // Populate line jump datalist
+        lineNumbersList.innerHTML = '';
+        for (let i = 0; i < lines.length; i++) {
+            const option = document.createElement('option');
+            option.value = (i + 1).toString();
+            lineNumbersList.appendChild(option);
+        }
+
+        currentLineIndex = 0;
+        stopReading();
+        playPauseBtn.disabled = (lines.length === 0);
+        prevLineBtn.disabled = (lines.length === 0);
+        nextLineBtn.disabled = (lines.length === 0);
+        bookmarkBtn.disabled = (lines.length === 0);
+        lineJumpInput.disabled = (lines.length === 0);
+        lineJumpInput.value = '';
+        loadBookmarks();
+        announceLineInLiveRegion(`Content loaded. ${lines.length} lines.`);
+    }
+
+
+    // --- JSONL Specific Functions ---
+
+    function populateJsonlDropdown(entries) {
+        jsonlContentSelect.innerHTML = '<option value="">-- Please select an entry --</option>';
+        entries.forEach(entry => {
+            const option = document.createElement('option');
+            option.value = entry.id;
+            // Ensure title and author exist to prevent "undefined"
+            const title = entry.title || "Untitled";
+            const author = entry.author ? ` by ${entry.author}` : "";
+            option.textContent = `${title}${author}`;
+            jsonlContentSelect.appendChild(option);
+        });
+
+        if (entries.length > 0) {
+            jsonlContentSelect.style.display = 'inline-block';
+            jsonlSelectLabel.style.display = 'inline-block';
+            playPauseBtn.disabled = true;
+            prevLineBtn.disabled = true;
+            nextLineBtn.disabled = true;
+            bookmarkBtn.disabled = true;
+            lineJumpInput.disabled = true;
+            textDisplay.innerHTML = '<p class="placeholder-text">Select an entry from the dropdown above.</p>';
+            announceLineInLiveRegion(`JSONL file loaded. ${entries.length} entries available for selection.`);
+        } else {
+            jsonlContentSelect.style.display = 'none';
+            jsonlSelectLabel.style.display = 'none';
+            textDisplay.innerHTML = '<p class="placeholder-text">No valid entries found in .jsonl file.</p>';
+            announceLineInLiveRegion("No valid entries found in .jsonl file.");
+        }
+    }
+
+    // --- Event Listeners ---
+
+    fileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Reset JSONL specific elements visibility
+        jsonlContentSelect.style.display = 'none';
+        jsonlSelectLabel.style.display = 'none';
+        jsonlContentSelect.innerHTML = '<option value="">-- Please select an entry --</option>';
+        jsonlEntries = [];
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const textContent = e.target.result;
+
+            if (file.name.endsWith('.jsonl')) {
+                const parsedEntries = textContent.split('\n').filter(line => line.trim() !== '').map(line => {
+                    try {
+                        return JSON.parse(line);
+                    } catch (err) {
+                        console.error("Error parsing JSONL line:", err);
+                        return null;
+                    }
+                }).filter(entry => entry !== null && entry.id && entry.text); // Only id and text are strictly required for loadTextIntoReader, title/author for dropdown
+                
+                jsonlEntries = parsedEntries;
+                populateJsonlDropdown(jsonlEntries);
+            } else { // Handles .txt AND any other file type as plain text
+                loadTextIntoReader(textContent, file.name);
+                announceLineInLiveRegion(`File "${file.name}" loaded as plain text.`);
+                // Ensure JSONL dropdown is hidden if a non-JSONL file is loaded
+                jsonlContentSelect.style.display = 'none';
+                jsonlSelectLabel.style.display = 'none';
+            }
+        };
+        reader.readAsText(file); // Always read as text
+    });
+
+    jsonlContentSelect.addEventListener('change', (event) => {
+        const selectedId = event.target.value;
+        if (selectedId === "") {
+            loadTextIntoReader("", "");
+            announceLineInLiveRegion("No entry selected.");
+            return;
+        }
+
+        const selectedEntry = jsonlEntries.find(entry => entry.id === selectedId);
+        if (selectedEntry) {
+            loadTextIntoReader(selectedEntry.text, `JSONL Entry: ${selectedEntry.title || selectedEntry.id}`); // Use ID as fallback filename for bookmarks
+            announceLineInLiveRegion(`Loaded entry: ${selectedEntry.title || selectedEntry.id} by ${selectedEntry.author || 'Unknown'}`);
+        } else {
+            announceLineInLiveRegion("Error: Selected entry not found.");
+        }
+    });
+
+    playPauseBtn.addEventListener('click', () => {
+        if (isPlaying) {
+            stopReading();
+            announceLineInLiveRegion("Reading paused.");
+        } else {
+            startReading();
+            announceLineInLiveRegion("Reading started.");
+        }
+    });
+
+    prevLineBtn.addEventListener('click', () => {
+        stopReading();
+        currentLineIndex = Math.max(0, currentLineIndex - 2);
+        highlightCurrentLine();
+        announceLineInLiveRegion(lines[currentLineIndex]);
+    });
+
+    nextLineBtn.addEventListener('click', () => {
+        stopReading();
+        readNextLine();
+    });
+
+    speedSelect.addEventListener('change', () => {
+        if (isPlaying) {
+            stopReading();
+            startReading();
+        }
+    });
+
+    // --- Bookmark Functionality ---
+
+    function saveBookmark(lineIndex) {
+        if (!currentFileName || lineIndex === undefined) return;
+
+        let bookmarks = JSON.parse(localStorage.getItem('textReaderBookmarks')) || {};
+        if (!bookmarks[currentFileName]) {
+            bookmarks[currentFileName] = [];
+        }
+
+        if (!bookmarks[currentFileName].includes(lineIndex)) {
+            bookmarks[currentFileName].push(lineIndex);
+            bookmarks[currentFileName].sort((a, b) => a - b);
+        }
+        localStorage.setItem('textReaderBookmarks', JSON.stringify(bookmarks));
+        populateBookmarksDropdown();
+        announceLineInLiveRegion(`Bookmark saved for line ${lineIndex + 1}.`);
+    }
+
+    function loadBookmarks() {
+        bookmarksSelect.innerHTML = '<option value="">Jump to Bookmark</option>';
+        if (!currentFileName) {
+            bookmarksSelect.style.display = 'none';
+            return;
+        }
+
+        let bookmarks = JSON.parse(localStorage.getItem('textReaderBookmarks')) || {};
+        const fileBookmarks = bookmarks[currentFileName] || [];
+
+        if (fileBookmarks.length > 0) {
+            fileBookmarks.forEach(index => {
+                if (index < lines.length) {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = `Line ${index + 1}: ${lines[index].substring(0, 50).trim()}...`;
+                    bookmarksSelect.appendChild(option);
+                }
+            });
+            bookmarksSelect.style.display = 'inline-block';
+        } else {
+            bookmarksSelect.style.display = 'none';
+        }
+    }
+
+    function populateBookmarksDropdown() {
+        loadBookmarks();
+    }
+
+    bookmarkBtn.addEventListener('click', () => {
+        if (lines.length === 0) return;
+        let lineToBookmark = isPlaying && currentLineIndex > 0 ? currentLineIndex - 1 : currentLineIndex;
+        lineToBookmark = Math.min(lineToBookmark, lines.length - 1);
+
+        if (lines.length > 0 && lineToBookmark >= 0) {
+            saveBookmark(lineToBookmark);
+        }
+    });
+
+    bookmarksSelect.addEventListener('change', (event) => {
+        const selectedIndex = parseInt(event.target.value, 10);
+        if (!isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < lines.length) {
+            stopReading();
+            currentLineIndex = selectedIndex;
+            highlightCurrentLine();
+            announceLineInLiveRegion(lines[currentLineIndex]);
+        }
+        bookmarksSelect.value = "";
+    });
+
+    lineJumpInput.addEventListener('change', (event) => {
+        const lineNumber = parseInt(event.target.value, 10);
+
+        if (isNaN(lineNumber) || lineNumber < 1 || lineNumber > lines.length) {
+            announceLineInLiveRegion("Invalid line number. Please enter a number between 1 and " + lines.length + ".");
+            lineJumpInput.value = '';
+            return;
+        }
+
+        stopReading();
+        currentLineIndex = lineNumber - 1;
+        highlightCurrentLine();
+        announceLineInLiveRegion(`Jumped to line ${lineNumber}: ${lines[currentLineIndex]}`);
+
+        lineJumpInput.value = '';
+    });
+
+    // --- Initial State and Reset Function ---
+    function resetReaderState() {
+        stopReading();
+        lines = [];
+        jsonlEntries = [];
+        currentLineIndex = 0;
+        currentFileName = '';
+        textDisplay.innerHTML = '<p class="placeholder-text">Load any file to start reading (optimized for .txt and .jsonl).</p>';
+        jsonlContentSelect.innerHTML = '<option value="">-- Please select an entry --</option>';
+        jsonlContentSelect.style.display = 'none';
+        jsonlSelectLabel.style.display = 'none';
+
+        playPauseBtn.disabled = true;
+        prevLineBtn.disabled = true;
+        nextLineBtn.disabled = true;
+        bookmarkBtn.disabled = true;
+        lineJumpInput.disabled = true;
+        bookmarksSelect.style.display = 'none';
+        bookmarksSelect.innerHTML = '<option value="">Jump to Bookmark</option>';
+        lineJumpInput.value = '';
+    }
+
+    resetReaderState(); // Call on initial load
+
+});
+</script>
+</body>
+</html>

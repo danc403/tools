@@ -27,15 +27,15 @@ h1 {
     align-items: center;
 }
 
-.controls label, .controls select, .controls button {
-    margin-right: 10px;
+.controls label, .controls select, .controls button, .controls input[type="file"], .controls input[type="number"] {
+    margin-right: 10px; /* Adjust spacing for new input */
 }
 
-button, select {
+button, select, input[type="number"] { /* Apply styles to number input too */
     padding: 8px 15px;
     border: 1px solid #ccc;
     border-radius: 5px;
-    cursor: pointer;
+    cursor: pointer; /* Cursor for select/buttons, not necessarily input */
     background-color: #fff;
     transition: background-color 0.2s;
 }
@@ -128,6 +128,10 @@ button:hover {
         <select id="bookmarksSelect" style="display:none;">
             <option value="">Jump to Bookmark</option>
         </select>
+
+        <label for="lineJumpInput">Go to Line:</label>
+        <input type="number" id="lineJumpInput" list="lineNumbersList" min="1" placeholder="Enter line #">
+        <datalist id="lineNumbersList"></datalist>
     </div>
 
     <div class="reader-container">
@@ -147,14 +151,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const playPauseBtn = document.getElementById('playPauseBtn');
     const prevLineBtn = document.getElementById('prevLineBtn');
     const nextLineBtn = document.getElementById('nextLineBtn');
-    const speedSelect = document.getElementById('speedSelect'); // Retain for potential future use or interval adjustment
+    const speedSelect = document.getElementById('speedSelect');
     const bookmarkBtn = document.getElementById('bookmarkBtn');
     const bookmarksSelect = document.getElementById('bookmarksSelect');
-    const liveRegion = document.getElementById('liveRegion'); // The ARIA live region
+    const liveRegion = document.getElementById('liveRegion');
+
+    // New elements for line jump
+    const lineJumpInput = document.getElementById('lineJumpInput');
+    const lineNumbersList = document.getElementById('lineNumbersList');
+
 
     let lines = [];
     let currentLineIndex = 0;
-    let playingInterval = null; // Renamed from speakingInterval
+    let playingInterval = null;
     let isPlaying = false;
     let currentFileName = '';
 
@@ -193,22 +202,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function startReading() {
-        if (lines.length === 0) return; // No file loaded
+        if (lines.length === 0) return;
 
         isPlaying = true;
         playPauseBtn.textContent = 'Pause';
 
-        // Read the current line immediately when "Play" is pressed
-        // If currentLineIndex is at end, restart from beginning for play button
         if (currentLineIndex >= lines.length) {
             currentLineIndex = 0;
         }
         readNextLine();
 
-        // Calculate interval based on selected speed (rough estimate)
-        // Adjust this value based on perceived reading speed.
-        // The speedSelect value of 1.0 could be ~200ms per word or similar.
-        const baseDelayMs = 3000; // Base delay for 'Normal' speed (1.0)
+        const baseDelayMs = 3000;
         const selectedSpeed = parseFloat(speedSelect.value);
         const intervalDelay = baseDelayMs / selectedSpeed;
 
@@ -222,8 +226,6 @@ document.addEventListener('DOMContentLoaded', () => {
             clearInterval(playingInterval);
             playingInterval = null;
         }
-        // Keep highlight on the last read line, but don't clear it.
-        // It will be cleared when a new line is highlighted.
     }
 
     // --- Event Listeners ---
@@ -237,21 +239,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 lines = textContent.split('\n');
                 currentFileName = file.name;
 
-                textDisplay.innerHTML = ''; // Clear previous content
+                textDisplay.innerHTML = '';
                 if (lines.length === 0 || (lines.length === 1 && lines[0].trim() === '')) {
                      const p = document.createElement('p');
                      p.textContent = "File is empty.";
                      p.classList.add('placeholder-text');
                      textDisplay.appendChild(p);
-                     lines = []; // Ensure lines array is truly empty if file is empty
+                     lines = [];
                 } else {
                     lines.forEach((line, index) => {
                         const p = document.createElement('p');
-                        p.textContent = line.trim() === '' ? '\u00A0' : line; // Non-breaking space for empty lines
-                        p.dataset.lineIndex = index; // Store index
+                        p.textContent = line.trim() === '' ? '\u00A0' : line;
+                        p.dataset.lineIndex = index;
                         p.addEventListener('click', () => {
-                            stopReading(); // Stop automatic playback
-                            currentLineIndex = index; // Set current line to clicked line
+                            stopReading();
+                            currentLineIndex = index;
                             highlightCurrentLine();
                             announceLineInLiveRegion(lines[currentLineIndex]);
                         });
@@ -259,14 +261,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
+                // --- NEW: Populate line jump datalist ---
+                lineNumbersList.innerHTML = ''; // Clear previous options
+                for (let i = 0; i < lines.length; i++) {
+                    const option = document.createElement('option');
+                    option.value = (i + 1).toString(); // Line numbers are 1-based
+                    lineNumbersList.appendChild(option);
+                }
+                lineJumpInput.disabled = (lines.length === 0);
+                lineJumpInput.value = ''; // Clear input field
 
-                currentLineIndex = 0; // Reset to start of file
-                stopReading(); // Ensure playback is stopped
+
+                currentLineIndex = 0;
+                stopReading();
                 playPauseBtn.disabled = (lines.length === 0);
                 prevLineBtn.disabled = (lines.length === 0);
                 nextLineBtn.disabled = (lines.length === 0);
                 bookmarkBtn.disabled = (lines.length === 0);
-                loadBookmarks(); // Load bookmarks for the new file
+                loadBookmarks();
                 announceLineInLiveRegion(`File "${file.name}" loaded. ${lines.length} lines.`);
             };
             reader.readAsText(file);
@@ -285,7 +297,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     prevLineBtn.addEventListener('click', () => {
         stopReading();
-        // Go back two steps so next readNextLine advances to the previous logical line
         currentLineIndex = Math.max(0, currentLineIndex - 2);
         highlightCurrentLine();
         announceLineInLiveRegion(lines[currentLineIndex]);
@@ -296,10 +307,9 @@ document.addEventListener('DOMContentLoaded', () => {
         readNextLine();
     });
 
-    // Speed select will now only affect the interval of the JavaScript playback
     speedSelect.addEventListener('change', () => {
         if (isPlaying) {
-            stopReading(); // Restart to apply new speed immediately
+            stopReading();
             startReading();
         }
     });
@@ -335,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (fileBookmarks.length > 0) {
             fileBookmarks.forEach(index => {
-                if (index < lines.length) { // Ensure bookmark is still valid for current file
+                if (index < lines.length) {
                     const option = document.createElement('option');
                     option.value = index;
                     option.textContent = `Line ${index + 1}: ${lines[index].substring(0, 50).trim()}...`;
@@ -354,10 +364,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bookmarkBtn.addEventListener('click', () => {
         if (lines.length === 0) return;
-        // If playing, bookmark the *current* line (which is `currentLineIndex - 1` because readNextLine increments after speaking)
-        // If paused, bookmark the highlighted line (which is `currentLineIndex`).
         let lineToBookmark = isPlaying && currentLineIndex > 0 ? currentLineIndex - 1 : currentLineIndex;
-        lineToBookmark = Math.min(lineToBookmark, lines.length - 1); // Ensure it's not past last line
+        lineToBookmark = Math.min(lineToBookmark, lines.length - 1);
 
         if (lines.length > 0 && lineToBookmark >= 0) {
             saveBookmark(lineToBookmark);
@@ -372,15 +380,35 @@ document.addEventListener('DOMContentLoaded', () => {
             highlightCurrentLine();
             announceLineInLiveRegion(lines[currentLineIndex]);
         }
-        bookmarksSelect.value = ""; // Reset dropdown after selection
+        bookmarksSelect.value = "";
     });
+
+    // --- NEW: Event Listener for Line Jump Combobox ---
+    lineJumpInput.addEventListener('change', (event) => {
+        const lineNumber = parseInt(event.target.value, 10);
+
+        if (isNaN(lineNumber) || lineNumber < 1 || lineNumber > lines.length) {
+            announceLineInLiveRegion("Invalid line number. Please enter a number between 1 and " + lines.length + ".");
+            lineJumpInput.value = ''; // Clear the invalid input
+            return;
+        }
+
+        stopReading(); // Stop any ongoing reading
+        currentLineIndex = lineNumber - 1; // Convert to 0-based index
+        highlightCurrentLine();
+        announceLineInLiveRegion(`Jumped to line ${lineNumber}: ${lines[currentLineIndex]}`);
+
+        lineJumpInput.value = ''; // Clear the input after jumping
+    });
+
 
     // --- Initial State ---
     playPauseBtn.disabled = true;
     prevLineBtn.disabled = true;
     nextLineBtn.disabled = true;
     bookmarkBtn.disabled = true;
-    loadBookmarks(); // Attempt to load any existing bookmarks on page load
+    lineJumpInput.disabled = true; // NEW: Disable line jump initially
+    loadBookmarks();
 });
 </script>
 </body>
