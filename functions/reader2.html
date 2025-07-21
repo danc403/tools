@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         readNextLine();
 
-        const baseDelayMs = 1500;
+        const baseDelayMs = 1500; // Adjusted reading speed
         const selectedSpeed = parseFloat(speedSelect.value);
         const intervalDelay = baseDelayMs / selectedSpeed;
 
@@ -281,10 +281,10 @@ document.addEventListener('DOMContentLoaded', () => {
         jsonlContentSelect.innerHTML = '<option value="">-- Please select an entry --</option>';
         entries.forEach(entry => {
             const option = document.createElement('option');
-            option.value = entry.id;
-            // Ensure title and author exist to prevent "undefined"
+            // Ensure title and author exist to prevent "undefined" in dropdown display
             const title = entry.title || "Untitled";
             const author = entry.author ? ` by ${entry.author}` : "";
+            option.value = entry.id; // The actual ID (number or string) from the JSONL
             option.textContent = `${title}${author}`;
             jsonlContentSelect.appendChild(option);
         });
@@ -292,6 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (entries.length > 0) {
             jsonlContentSelect.style.display = 'inline-block';
             jsonlSelectLabel.style.display = 'inline-block';
+            // Disable main reader controls until an item is selected from JSONL dropdown
             playPauseBtn.disabled = true;
             prevLineBtn.disabled = true;
             nextLineBtn.disabled = true;
@@ -326,12 +327,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (file.name.endsWith('.jsonl')) {
                 const parsedEntries = textContent.split('\n').filter(line => line.trim() !== '').map(line => {
                     try {
-                        return JSON.parse(line);
+                        // Ensure id and text fields exist for valid entries
+                        const parsed = JSON.parse(line);
+                        if (parsed && (parsed.id !== undefined) && (parsed.text !== undefined)) { // Explicitly check for 'undefined' to handle null/empty strings correctly
+                            return parsed;
+                        }
+                        return null; // Discard entries without id or text
                     } catch (err) {
                         console.error("Error parsing JSONL line:", err);
                         return null;
                     }
-                }).filter(entry => entry !== null && entry.id && entry.text); // Only id and text are strictly required for loadTextIntoReader, title/author for dropdown
+                }).filter(entry => entry !== null); // Filter out nulls from parsing errors or missing fields
                 
                 jsonlEntries = parsedEntries;
                 populateJsonlDropdown(jsonlEntries);
@@ -347,19 +353,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     jsonlContentSelect.addEventListener('change', (event) => {
-        const selectedId = event.target.value;
+        const selectedId = event.target.value; // This is a string from the HTML option value
         if (selectedId === "") {
             loadTextIntoReader("", "");
             announceLineInLiveRegion("No entry selected.");
             return;
         }
 
-        const selectedEntry = jsonlEntries.find(entry => entry.id === selectedId);
+        // CORRECTED: Convert selectedId to a number for comparison if entry.id is numeric
+        // We find the entry by matching the numeric ID (from JSON) with the parsed string ID (from dropdown)
+        const selectedEntry = jsonlEntries.find(entry => entry.id === parseInt(selectedId, 10));
+
         if (selectedEntry) {
-            loadTextIntoReader(selectedEntry.text, `JSONL Entry: ${selectedEntry.title || selectedEntry.id}`); // Use ID as fallback filename for bookmarks
+            loadTextIntoReader(selectedEntry.text, `JSONL Entry: ${selectedEntry.title || selectedEntry.id}`);
             announceLineInLiveRegion(`Loaded entry: ${selectedEntry.title || selectedEntry.id} by ${selectedEntry.author || 'Unknown'}`);
         } else {
-            announceLineInLiveRegion("Error: Selected entry not found.");
+            announceLineInLiveRegion("Error: Selected entry not found. (ID mismatch or parse error)");
         }
     });
 
