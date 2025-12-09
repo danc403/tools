@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Minutes</title>
+    <style>
+        /* --- CSS STYLES --- */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f9;
+        }
+
+        #app-container {
+            max-width: 800px;
+            margin: auto;
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 10px;
+            text-align: center;
+        }
+
+        #minutes-area {
+            width: 100%;
+            height: 400px;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            flex-grow: 1;
+        }
+
+        #save-button {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        #email-button {
+            background-color: #2196F3;
+            color: white;
+        }
+
+        #clear-button {
+            background-color: #f44336;
+            color: white;
+        }
+
+        #shortcuts-toggle {
+            background-color: #ff9800;
+            color: white;
+            flex-grow: 0; /* Keep size small */
+            width: auto;
+        }
+
+        #shortcuts-editor {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px dashed #999;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            display: none; /* Initially hidden */
+        }
+
+        #shortcuts-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        #shortcuts-table th, #shortcuts-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        #shortcuts-table th {
+            background-color: #e0e0e0;
+        }
+
+        #shortcuts-table input[type="text"] {
+            width: 90%;
+            padding: 5px;
+            border: 1px solid #ccc;
+        }
+
+        .add-row-button {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            margin-top: 10px;
+            background-color: #607d8b;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <button id="shortcuts-toggle">Show/Hide Shortcuts</button>
+
+        <h1>Meeting Minutes</h1>
+
+        <textarea id="minutes-area" placeholder="Start taking notes here..."></textarea>
+
+        <div class="button-group">
+            <button id="save-button">Save to File</button>
+            <button id="email-button">Send in Email</button>
+            <button id="clear-button">Clear / Discard</button>
+        </div>
+
+        <div id="shortcuts-editor">
+            <h2>Shortcut Translation Table</h2>
+            <table id="shortcuts-table">
+                <thead>
+                    <tr>
+                        <th>Shortcut (e.g., /td)</th>
+                        <th>Replacement Text</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
+            <button class="add-row-button" onclick="addShortcutRow()">+ Add New Shortcut</button>
+            <p style="margin-top: 10px; font-size: 0.9em;">* Shortcuts are applied after you type the trigger key (usually space or Enter).</p>
+        </div>
+    </div>
+
+    <script>
+        // --- JAVASCRIPT LOGIC ---
+        const MINUTES_AREA = document.getElementById('minutes-area');
+        const SHORTHAND_KEY = '/';
+        let shortcuts = [];
+        
+        // --- Utility to get fresh Date/Time shortcuts ---
+        function getFreshDateTimeShortcuts(currentShortcuts) {
+            const now = new Date();
+            const dateStr = 'Date: ' + now.toLocaleDateString();
+            const timeStr = 'Time: ' + now.toLocaleTimeString();
+
+            // Find existing index for /dt and /tm
+            const dtIndex = currentShortcuts.findIndex(s => s.key === '/dt');
+            const tmIndex = currentShortcuts.findIndex(s => s.key === '/tm');
+
+            // Update or add /dt
+            if (dtIndex > -1) {
+                currentShortcuts[dtIndex].value = dateStr;
+            } else {
+                currentShortcuts.unshift({ key: '/dt', value: dateStr });
+            }
+
+            // Update or add /tm
+            if (tmIndex > -1) {
+                currentShortcuts[tmIndex].value = timeStr;
+            } else {
+                currentShortcuts.unshift({ key: '/tm', value: timeStr });
+            }
+            return currentShortcuts;
+        }
+
+
+        // --- Core Application Functions ---
+
+        function initApp() {
+            // 1. Load persisted shortcuts from Local Storage
+            shortcuts = JSON.parse(localStorage.getItem('minutesShortcuts')) || [
+                // Fallback default shortcuts if nothing in storage
+                { key: '/at', value: '@Action_Item:' },
+                { key: '/dec', value: 'Decision: ' }
+            ];
+
+            // 2. Ensure /dt and /tm exist and have fresh values
+            shortcuts = getFreshDateTimeShortcuts(shortcuts);
+            
+            // 3. Apply initial date/time shortcuts immediately if the area is empty
+            if (MINUTES_AREA.value.trim() === '') {
+                applyShortcut('/dt');
+                applyShortcut('/tm');
+                MINUTES_AREA.focus();
+            }
+            renderShortcutsTable();
+        }
+
+        function saveShortcuts() {
+            const tableBody = document.querySelector('#shortcuts-table tbody');
+            const rows = tableBody.querySelectorAll('tr');
+            const newShortcuts = [];
+            
+            rows.forEach(row => {
+                const keyInput = row.cells[0].querySelector('input');
+                const valueInput = row.cells[1].querySelector('input');
+                
+                if (keyInput && valueInput && keyInput.value.trim() !== '') {
+                    newShortcuts.push({
+                        key: keyInput.value.trim(),
+                        value: valueInput.value
+                    });
+                }
+            });
+
+            // Only save the non-date/time shortcuts. 
+            // The date/time ones are generated fresh every load/clear.
+            const savedShortcuts = newShortcuts.filter(s => s.key !== '/dt' && s.key !== '/tm');
+
+            localStorage.setItem('minutesShortcuts', JSON.stringify(savedShortcuts));
+            console.log('Shortcuts saved:', savedShortcuts);
+
+            // Re-run init to update the internal 'shortcuts' variable with fresh date/time 
+            // and the user's latest custom shortcuts.
+            initApp();
+        }
+
+        function renderShortcutsTable() {
+            const tableBody = document.querySelector('#shortcuts-table tbody');
+            tableBody.innerHTML = ''; 
+
+            shortcuts.forEach(item => {
+                // We render all shortcuts, including date/time, so they can be edited if needed
+                addShortcutRow(item.key, item.value, false);
+            });
+        }
+
+        function addShortcutRow(key = '', value = '', focus = true) {
+            const tableBody = document.querySelector('#shortcuts-table tbody');
+            const newRow = tableBody.insertRow();
+            
+            // Key Cell
+            let cell1 = newRow.insertCell(0);
+            cell1.innerHTML = `<input type="text" value="${key}" onchange="saveShortcuts()" placeholder="/key">`;
+
+            // Value Cell
+            let cell2 = newRow.insertCell(1);
+            cell2.innerHTML = `<input type="text" value="${value.replace(/"/g, '&quot;')}" onchange="saveShortcuts()" placeholder="Replacement Phrase">`;
+            
+            // Action Cell
+            let cell3 = newRow.insertCell(2);
+            const removeButton = document.createElement('button');
+            removeButton.textContent = 'Remove';
+            removeButton.style.backgroundColor = '#d32f2f';
+            removeButton.style.color = 'white';
+            removeButton.style.padding = '5px 10px';
+            removeButton.onclick = () => {
+                tableBody.removeChild(newRow);
+                saveShortcuts(); // Save changes immediately
+            };
+            cell3.appendChild(removeButton);
+
+            if (focus) {
+                cell1.querySelector('input').focus();
+            }
+        }
+
+        function applyShortcut(triggerKey) {
+            // Find the replacement using a case-insensitive check to fix the /DEC issue
+            const replacement = shortcuts.find(s => s.key.toLowerCase() === triggerKey.toLowerCase());
+            
+            if (replacement) {
+                const text = MINUTES_AREA.value;
+                // Find the start position of the case-insensitive shortcut key in the current text
+                // This is a complex search since JavaScript's lastIndexOf is case-sensitive.
+                // We'll search backwards for the key or the closest matching case.
+                
+                let lastKeyPos = -1;
+                // Since the trigger key is the last thing typed, we can assume it's at the end 
+                // of the current text (minus the trigger character)
+                
+                // Case-insensitive search near the end of the string
+                const keyLength = triggerKey.length;
+                const searchStart = text.length - keyLength;
+                
+                if (searchStart >= 0 && text.substring(searchStart, searchStart + keyLength).toLowerCase() === triggerKey.toLowerCase()) {
+                    lastKeyPos = searchStart;
+                } else {
+                    // Fallback to last index of the key itself
+                    lastKeyPos = text.lastIndexOf(triggerKey);
+                }
+
+                if (lastKeyPos !== -1) {
+                    // Replace the key with the full phrase
+                    MINUTES_AREA.value = text.substring(0, lastKeyPos) + replacement.value + text.substring(lastKeyPos + keyLength);
+                }
+            }
+        }
+
+        // --- Event Handlers (No changes here, they were already correct) ---
+
+        document.getElementById('shortcuts-toggle').addEventListener('click', () => {
+            const editor = document.getElementById('shortcuts-editor');
+            const toggleButton = document.getElementById('shortcuts-toggle');
+            
+            if (editor.style.display === 'none' || editor.style.display === '') {
+                editor.style.display = 'block';
+                toggleButton.textContent = 'Hide Shortcuts';
+                renderShortcutsTable(); 
+            } else {
+                editor.style.display = 'none';
+                toggleButton.textContent = 'Show/Hide Shortcuts';
+            }
+        });
+
+        document.getElementById('save-button').addEventListener('click', () => {
+            const content = MINUTES_AREA.value;
+            const filename = 'meeting_minutes_' + new Date().toISOString().slice(0, 10) + '.txt';
+            
+            // Create a Blob containing the text
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            
+            // Create a temporary link element for download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            
+            // Programmatically click the link
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        document.getElementById('email-button').addEventListener('click', () => {
+            const content = MINUTES_AREA.value;
+            const subject = encodeURIComponent('Meeting Minutes: ' + new Date().toLocaleDateString());
+            const body = encodeURIComponent(content);
+            
+            // Use the mailto protocol to open the default email client
+            window.location.href = `mailto:?subject=${subject}&body=${body}`;
+        });
+
+        document.getElementById('clear-button').addEventListener('click', () => {
+            if (confirm("Are you sure you want to clear all the minutes?")) {
+                MINUTES_AREA.value = '';
+                initApp(); // Re-add default date/time
+            }
+        });
+
+        MINUTES_AREA.addEventListener('keyup', (e) => {
+            const text = MINUTES_AREA.value;
+            
+            // Get the text preceding the last typed character
+            const textBeforeTrigger = text.substring(0, text.length - 1);
+
+            // Find the start of the last word that contains the SHORTHAND_KEY
+            const lastSpace = textBeforeTrigger.lastIndexOf(' ');
+            const lastEnter = textBeforeTrigger.lastIndexOf('\n');
+            const lastKey = Math.max(lastSpace, lastEnter);
+            
+            let potentialShortcut = '';
+            if (lastKey === -1) {
+                potentialShortcut = textBeforeTrigger; 
+            } else {
+                potentialShortcut = textBeforeTrigger.substring(lastKey).trim();
+            }
+            
+            // Check if a trigger key was pressed (Space, Enter, Tab) AND 
+            // the text before it starts with the shorthand key
+            if (potentialShortcut.startsWith(SHORTHAND_KEY) && (e.key === ' ' || e.key === 'Enter' || e.key === 'Tab')) {
+                
+                // The key in the shortcuts array is case-sensitive, but the trigger should be case-insensitive
+                const match = shortcuts.find(s => s.key.toLowerCase() === potentialShortcut.toLowerCase());
+
+                if (match) {
+                    let newText = textBeforeTrigger.substring(0, textBeforeTrigger.length - potentialShortcut.length); 
+                    
+                    // The last part of the `newText` should be replaced
+                    const lastKeyPos = newText.length;
+                    
+                    // The replacement text is inserted where the shortcut was found
+                    MINUTES_AREA.value = newText + match.value;
+                    
+                    // Prevent the trigger key (space/enter) from being added after the substitution
+                    e.preventDefault();
+                }
+            }
+        });
+
+        // Initialize the application on load
+        window.onload = initApp;
+    </script>
+
+</body>
+</html>
